@@ -1,0 +1,41 @@
+name: CI
+
+on:
+	push:
+		branches: [main]
+	pull_request:
+		branches: [main]
+
+jobs:
+	test-backend:
+		name: Backend tests (Python 3.12)
+		runs-on: ubuntu-latest
+
+		steps:
+		- uses: actions/checkout@v4
+
+		- uses: actions/setup-python@v5
+			with:
+			python-version: "3.12"
+
+		- name: Install dependencies
+			run: pip install -r backend/requirements.txt
+
+		- name: Run test suite
+			run: pytest backend/tests/ -v --tb=short
+
+	build-docker:
+		name: Docker build check
+		runs-on: ubuntu-latest
+		# Only verifies images compile; does not push to a registry.
+		steps:
+		- uses: actions/checkout@v4
+
+		- name: Build backend image
+			run: docker build ./backend --tag satellite-backend:ci
+
+		- name: Build frontend image
+			run: |
+			docker build ./frontend \
+				--build-arg VITE_CESIUM_TOKEN=ci_placeholder \
+				--tag satellite-frontend:ci
