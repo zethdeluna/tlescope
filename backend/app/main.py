@@ -17,6 +17,8 @@ Lifecycle:
     Each refresh also persists TLE snapshots to PostgreSQL.
 """
 
+import os
+
 from datetime import datetime, timezone, timedelta
 from typing import Annotated, Optional
 
@@ -39,9 +41,11 @@ app = FastAPI(
 	lifespan=lifespan
 )
 
+origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost").split(",")
+
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["http://localhost:5173", "http://localhost"],
+	allow_origins=origins,
 	allow_methods=["GET"],
 	allow_headers=["*"]
 )
