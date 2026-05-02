@@ -22,7 +22,7 @@ interface UseSatelliteCatalogResult {
 	error: string | null;
 }
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "/api";
 const MAX_RESULTS = 20;
 
 export function useSatelliteCatalog(query: string): UseSatelliteCatalogResult {

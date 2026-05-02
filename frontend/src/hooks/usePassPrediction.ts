@@ -58,7 +58,7 @@ interface UsePassPredictionResult {
 	refresh: () => void;
 }
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "/api";
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
 export function usePassPrediction(

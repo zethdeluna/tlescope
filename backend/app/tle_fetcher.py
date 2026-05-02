@@ -50,8 +50,10 @@ CELESTRAK_BASE = "https://celestrak.org/NORAD/elements/gp.php"
 NORAD_ISS = 25544
 TLE_TTL_SECONDS = 4 * 60 * 60       # individual TLE disk-cache TTL
 CATALOG_TTL_SECONDS = 24 * 60 * 60  # name-only catalog disk-cache TTL
+# Bulk fetches produce ~10 000 entries; individual lookups stay well below this
+_MIN_BULK_ENTRIES = 500
 CACHE_PATH = Path(__file__).parent.parent / ".tle_cache.json"
-HEADERS = {"User-Agent": "satellite-tracker/1.0 (github.com/yourusername/satellite-tracker)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; satellite-tracker/1.0)"}
 
 _FALLBACK_ISS_TLE = """
 ISS (ZARYA)
@@ -95,6 +97,20 @@ def refresh_tle_cache() -> None:
     """
     print("[scheduler] TLE refresh started")
 
+    # If the disk cache has enough fresh entries from a prior bulk fetch, warm
+    # memory from disk instead of hitting Celestrak — avoids rate-limiting on
+    # rapid Uvicorn restarts during development. Individual satellite lookups
+    # produce far fewer than _MIN_BULK_ENTRIES entries, so this only triggers
+    # after a real full-catalog refresh.
+    disk_tles_raw = _cache.load_all_tles(TLE_TTL_SECONDS)
+    if len(disk_tles_raw) >= _MIN_BULK_ENTRIES:
+        disk_tles = {nid: TLE(**data) for nid, data in disk_tles_raw.items()}
+        with _tle_lock:
+            _tle_cache.clear()
+            _tle_cache.update(disk_tles)
+        print(f"[scheduler] loaded {len(disk_tles)} TLEs from disk cache (Celestrak fetch skipped)")
+        return
+
     try:
         fresh = _fetch_active_tles()
     except Exception as exc:
@@ -113,7 +129,6 @@ def refresh_tle_cache() -> None:
             f"tle:{norad_id}",
             {"name": tle.name, "line1": tle.line1, "line2": tle.line2}
         )
-
     print(f"[scheduler] TLE refresh complete — {len(fresh)} satellites cached")
 
     # Persist to PostgreSQL; wrapped so a DB failure doesn't crash the scheduler
@@ -185,7 +200,7 @@ def _persist_snapshots(tles: dict[int, TLE]) -> None:
     now = datetime.now(tz=timezone.utc)
 
     try:
-        with Session(engine) as session:
+        with Session() as session:
 
             # ── Phase 1: upsert satellite names ──────────────────────────────
             for norad_id, tle in tles.items():
@@ -290,6 +305,23 @@ class DiskCache:
             store[key] = {"data": data, "fetched_at": time.time()}
             self._save(store)
 
+    def load_all_tles(self, ttl_seconds: float) -> dict[int, dict]:
+        """Return all tle:{norad_id} entries that are within TTL."""
+        with self._lock:
+            store = self._load()
+        now = time.time()
+        result = {}
+        for key, entry in store.items():
+            if not key.startswith("tle:"):
+                continue
+            try:
+                norad_id = int(key[4:])
+                if now - entry["fetched_at"] < ttl_seconds:
+                    result[norad_id] = entry["data"]
+            except (ValueError, KeyError):
+                continue
+        return result
+
 
 _cache = DiskCache(CACHE_PATH)
 
@@ -305,7 +337,7 @@ def _fetch_active_tles() -> dict[int, TLE]:
     This is the only place that makes a catalog-scale HTTP call to Celestrak.
     """
     url = f"{CELESTRAK_BASE}?GROUP=active&FORMAT=TLE"
-    response = httpx.get(url, timeout=30.0)
+    response = httpx.get(url, timeout=30.0, headers=HEADERS)
     response.raise_for_status()
 
     lines = [l.strip() for l in response.text.splitlines() if l.strip()]
@@ -359,7 +391,7 @@ def fetch_tle_by_norad(norad_id: int) -> TLE:
     # 3. Live fetch
     print(f"[cache miss] fetching NORAD {norad_id} from Celestrak")
     url = f"{CELESTRAK_BASE}?CATNR={norad_id}&FORMAT=TLE"
-    response = httpx.get(url, timeout=10.0)
+    response = httpx.get(url, timeout=10.0, headers=HEADERS)
     response.raise_for_status()
 
     raw = response.text.strip()
@@ -368,6 +400,7 @@ def fetch_tle_by_norad(norad_id: int) -> TLE:
 
     tle = parse_tle(raw)
     _cache.set(key, {"name": tle.name, "line1": tle.line1, "line2": tle.line2})
+    _persist_snapshots({norad_id: tle})
     return tle
 
 
@@ -391,6 +424,9 @@ def fetch_satellite_catalog() -> list[dict]:
     Returns a list of {"name": ..., "norad_id": ...} dicts for the search UI.
     Full TLE data is served by the groundtrack/passes endpoints from the
     in-memory cache; this catalog is name+id only.
+
+    Falls back to the satellites table when Celestrak is unreachable (e.g.
+    Docker container IPs are often rate-limited for bulk GROUP=active requests).
     """
     cached = _cache.get("catalog", CATALOG_TTL_SECONDS)
     if cached is not None:
@@ -399,8 +435,12 @@ def fetch_satellite_catalog() -> list[dict]:
 
     print("[cache miss] fetching full satellite catalog from Celestrak")
     url = f"{CELESTRAK_BASE}?GROUP=active&FORMAT=TLE"
-    response = httpx.get(url, timeout=30.0)
-    response.raise_for_status()
+    try:
+        response = httpx.get(url, timeout=30.0, headers=HEADERS)
+        response.raise_for_status()
+    except Exception as exc:
+        print(f"[catalog] Celestrak fetch failed ({exc}), falling back to database")
+        return _catalog_from_db()
 
     lines = [l.strip() for l in response.text.splitlines() if l.strip()]
     if len(lines) < 3 or len(lines) % 3 != 0:
@@ -421,5 +461,27 @@ def fetch_satellite_catalog() -> list[dict]:
         catalog.append({"name": name, "norad_id": norad_id})
 
     print(f"[catalog] parsed {len(catalog)} satellites")
-    _cache.set("catalog", catalog)
+    if catalog:
+        _cache.set("catalog", catalog)
     return catalog
+
+
+def _catalog_from_db() -> list[dict]:
+    """Return the satellite list from PostgreSQL when Celestrak is unavailable."""
+    with Session() as session:
+        rows = session.execute(select(Satellite)).scalars().all()
+    if rows:
+        catalog = [{"name": row.name, "norad_id": row.norad_id} for row in rows]
+        print(f"[catalog] served {len(catalog)} satellites from database fallback")
+        return catalog
+
+    # DB empty — try the in-memory TLE cache (grows as individual satellites are looked up)
+    with _tle_lock:
+        cache_entries = list(_tle_cache.items())
+    if cache_entries:
+        catalog = [{"name": tle.name, "norad_id": nid} for nid, tle in cache_entries]
+        print(f"[catalog] served {len(catalog)} satellites from in-memory cache fallback")
+        return catalog
+
+    print("[catalog] all sources unavailable, returning empty catalog")
+    return []

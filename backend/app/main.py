@@ -41,7 +41,7 @@ app = FastAPI(
 
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["http://localhost:5173"],
+	allow_origins=["http://localhost:5173", "http://localhost"],
 	allow_methods=["GET"],
 	allow_headers=["*"]
 )
@@ -79,7 +79,7 @@ def satellite_groundtrack(
 
 	if snapshot_id is not None:
 		try:
-			with Session(engine) as session:
+			with Session() as session:
 				row = session.scalar(
 					select(TLESnapshot).where(TLESnapshot.id == snapshot_id)
 				)
@@ -135,7 +135,7 @@ def satellite_tle_history(
 			raise HTTPException(status_code=422, detail=f"Invalid end date: {end!r}")
 		
 	try:
-		with Session(engine) as session:
+		with Session() as session:
 			sat = session.get(Satellite, norad_id)
 			if sat is None:
 				return {"norad_id": norad_id, "snapshots": []}

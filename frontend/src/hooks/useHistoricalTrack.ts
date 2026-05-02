@@ -33,7 +33,7 @@ export interface HistoricalTrackResult {
     error: string | null;
 }
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "/api";
 
 export function useHistoricalTrack(
     noradId: number,

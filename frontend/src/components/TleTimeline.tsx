@@ -28,7 +28,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSatelliteStore } from "../store/satelliteStore";
 import { useHistoricalTrack } from "../hooks/useHistoricalTrack";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "/api";
 
 // Shape of one item from the /tle_history response
 interface TLESnapshotSummary {
