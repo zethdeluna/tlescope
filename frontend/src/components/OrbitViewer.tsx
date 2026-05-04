@@ -22,7 +22,7 @@
  */
 
 import { useMemo, useRef, useEffect } from "react";
-import { Viewer, Entity, CameraFlyTo } from "resium";
+import { Viewer, Entity, CameraFlyHome } from "resium";
 import * as Cesium from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
@@ -150,6 +150,9 @@ export default function OrbitViewer({ satellites }: OrbitViewerProps) {
 	const orbit3DData = useSatelliteStore(s => s.orbit3DData);
 	const viewerRef = useRef<{ cesiumElement: Cesium.Viewer } | null>(null);
 
+	// Collect satellites that have loaded orbit data
+	const readySats = satellites.filter(sat => orbit3DData[sat.noradId]?.data != null);
+
 	// Configure the Cesium clock once on mount (start at now, run at 60x)
 	useEffect(() => {
 
@@ -170,32 +173,7 @@ export default function OrbitViewer({ satellites }: OrbitViewerProps) {
 		// Start from a comfortable high-alt view of Earth
 		viewer.camera.flyHome(0);
 
-	}, []);
-
-	// Collect satellites that have loaded orbit data
-	const readySats = satellites.filter(sat => orbit3DData[sat.noradId]?.data != null);
-
-	// Camera destination: initial view centered on the first loaded satellite's 
-	// current position, or default to high-alt Earth.
-	const initialDestination = useMemo(() => {
-
-		const firstOrbit = readySats[0]
-			? orbit3DData[readySats[0].noradId]?.data
-			: null
-		;
-
-		if ( firstOrbit && firstOrbit.positions.length > 0 ) {
-
-			const p = firstOrbit.positions[0];
-
-			return new Cesium.Cartesian3(p.x_km * 1000, p.y_km * 1000, p.z_km * 1000);
-
-		}
-
-		// Default: straight-down view of Earth at ~20,000km
-		return Cesium.Cartesian3.fromDegrees(0, 20, 200_000_000);
-
-	}, [readySats.length]);
+	}, [readySats]);
 
 	return (
 		<div className="orbit-viewer-container">
@@ -220,10 +198,13 @@ export default function OrbitViewer({ satellites }: OrbitViewerProps) {
 				
 				{/* Fly camera to initial position once data is ready */}
 				{readySats.length > 0 && (
-					<CameraFlyTo 
-						destination={initialDestination} 
-						duration={1.5} 
-						once
+					// <CameraFlyTo 
+					// 	destination={initialDestination} 
+					// 	duration={1.5} 
+					// 	once
+					// />
+					<CameraFlyHome 
+						duration={1}
 					/>
 				)}
 

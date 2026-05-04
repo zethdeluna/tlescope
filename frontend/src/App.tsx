@@ -67,6 +67,7 @@ export default function App() {
                             </div>
                         }>
                             <OrbitViewer
+                                key={selectedSatellites.map(s => s.noradId).join(',')}
                                 satellites={selectedSatellites}
                             />
                         </Suspense>
