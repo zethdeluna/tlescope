@@ -396,17 +396,22 @@ def fetch_tle_by_norad(norad_id: int) -> TLE:
     # 3. Live fetch
     print(f"[cache miss] fetching NORAD {norad_id} from Celestrak")
     url = f"{CELESTRAK_BASE}?CATNR={norad_id}&FORMAT=TLE"
-    response = httpx.get(url, timeout=_TIMEOUT_SINGLE, headers=HEADERS)
-    response.raise_for_status()
-
-    raw = response.text.strip()
-    if not raw or "No GP data found" in raw:
-        raise ValueError(f"No TLE data found for NORAD ID {norad_id}")
-
-    tle = parse_tle(raw)
-    _cache.set(key, {"name": tle.name, "line1": tle.line1, "line2": tle.line2})
-    _persist_snapshots({norad_id: tle})
-    return tle
+    try:
+        response = httpx.get(url, timeout=_TIMEOUT_SINGLE, headers=HEADERS)
+        response.raise_for_status()
+        raw = response.text.strip()
+        if not raw or "No GP data found" in raw:
+            raise ValueError(f"No TLE data found for NORAD ID {norad_id}")
+        tle = parse_tle(raw)
+        _cache.set(key, {"name": tle.name, "line1": tle.line1, "line2": tle.line2})
+        _persist_snapshots({norad_id: tle})
+        return tle
+    except Exception as exc:
+        # 4. Hardcoded fallback for ISS when Celestrak is unreachable
+        if norad_id == NORAD_ISS:
+            print(f"[warning] Celestrak fetch failed ({exc}), using hardcoded ISS fallback")
+            return parse_tle(_FALLBACK_ISS_TLE)
+        raise
 
 
 def fetch_iss_tle() -> TLE:
