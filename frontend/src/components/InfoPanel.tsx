@@ -1,19 +1,14 @@
 /**
- * Right-hand sidebar with four sections:
+ * Right-hand sidebar with three sections:
  * 	1. Panel header			- tracked object count and capacity notice
  * 	2. GroundStationInput	- observer location
  * 	3. Satellite cards		- position telemetry, pass predictions, TLE timeline
- * 	4. OrbitViewer panel	- CesiumJS 3D globe, shown when toggled
  */
 
-import { lazy, Suspense, useState } from "react";
 import { useSatelliteStore, MAX_TRACKED } from "../store/satelliteStore";
 import { GroundStationInput } from "./GroundStationInput";
 import { PassTable } from "./PassTable";
 import { TLETimeline } from "./TleTimeline";
-
-// Lazy-load OrbitViewer so Cesium's bundle is excluded from the initial chunk
-const OrbitViewer = lazy(() => import("./OrbitViewer"));
 
 export function formatLat(deg: number): string {
     return `${Math.abs(deg).toFixed(3)}° ${deg >= 0 ? "N" : "S"}`;
@@ -29,8 +24,6 @@ export function InfoPanel() {
 
 	const canRemove = selectedSatellites.length > 1;
 	const atCapacity = selectedSatellites.length >= MAX_TRACKED;
-
-	const [show3DPanel, setShow3DPanel] = useState(false);
 
 	return (
 		<aside className="info-panel">
@@ -91,16 +84,6 @@ export function InfoPanel() {
 								</span>
 
 								<span className="sat-card-norad">{sat.noradId}</span>
-
-								{/* 3D view toggle */}
-								<button 
-									className={`sat-3d-btn ${show3DPanel ? "sat-3d-btn--active" : ""}`} 
-									onClick={() => setShow3DPanel(v => !v)} 
-									title={show3DPanel ? "Close 3D view" : "Open 3D orbit view"} 
-									aria-pressed={show3DPanel} 
-								>
-									3D
-								</button>
 
 								{/* Remove satellite button */}
 								{canRemove && (
@@ -173,20 +156,6 @@ export function InfoPanel() {
 				<footer className="panel-footer-hint">
 					SEARCH TO ADD UP TO {MAX_TRACKED} SATELLITES
 				</footer>
-			)}
-
-			{/* 3D Orbit panel */}
-			{show3DPanel && (
-				<Suspense fallback={
-					<div className="orbit-viewer-loading">
-						<span>LOADING 3D ENGINE</span>
-					</div>
-				}>
-					<OrbitViewer 
-						satellites={selectedSatellites} 
-						onClose={() => setShow3DPanel(false)}
-					/>
-				</Suspense>
 			)}
 
 		</aside>

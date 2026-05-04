@@ -196,44 +196,12 @@ export default function OrbitViewer({ satellites, onClose }: OrbitViewerProps) {
 		}
 
 		// Default: straight-down view of Earth at ~20,000km
-		return Cesium.Cartesian3.fromDegrees(0, 20, 20_000_000);
+		return Cesium.Cartesian3.fromDegrees(0, 20, 200_000_000);
 
 	}, [readySats.length]);
 
 	return (
 		<div className="orbit-viewer-container">
-
-			{/* Header bar */}
-			<div className="orbit-viewer-header">
-
-				<span className="orbit-viewer-title">3D ORBIT VIEW</span>
-
-				<div className="orbit-viewer-header-meta">
-
-					{loadingSats.length > 0 && (
-						<span className="orbit-status-loading">
-							⟳ LOADING {loadingSats.map(s => s.name).join(", ")}
-						</span>
-					)}
-
-					{errorSats.map(sat => (
-						<span key={sat.noradId} className="orbit-status-error">
-							⚠ {sat.name}: {orbit3DData[sat.noradId]?.error}
-						</span>
-					))}
-
-				</div>
-
-				<button 
-					className="orbit-viewer-close" 
-					onClick={onClose} 
-					title="Close 3D view" 
-					aria-label="Close 3D view" 
-				>
-					✕
-				</button>
-
-			</div>
 
 			{/* CesiumJS globe */}
 			<Viewer 
