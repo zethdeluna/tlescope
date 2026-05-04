@@ -68,7 +68,6 @@ export default function App() {
                         }>
                             <OrbitViewer
                                 satellites={selectedSatellites}
-                                // onClose={() => setShow3D(false)}
                             />
                         </Suspense>
                     ) : (

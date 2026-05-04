@@ -30,6 +30,7 @@ API remains available even when PostgreSQL is down.
 """
 
 import json
+import os
 import threading
 import time
 from datetime import datetime, timezone, timedelta
@@ -49,6 +50,10 @@ from app.models import Satellite, TLESnapshot
 CELESTRAK_BASE = "https://celestrak.org/NORAD/elements/gp.php"
 NORAD_ISS = 25544
 TLE_TTL_SECONDS = 4 * 60 * 60       # individual TLE disk-cache TTL
+
+# Configurable via CELESTRAK_TIMEOUT_S env var (default: 30s for bulk, 10s for individual)
+_TIMEOUT_BULK = float(os.environ.get("CELESTRAK_TIMEOUT_S", "30"))
+_TIMEOUT_SINGLE = min(_TIMEOUT_BULK, 10.0)
 CATALOG_TTL_SECONDS = 24 * 60 * 60  # name-only catalog disk-cache TTL
 # Bulk fetches produce ~10 000 entries; individual lookups stay well below this
 _MIN_BULK_ENTRIES = 500
@@ -337,7 +342,7 @@ def _fetch_active_tles() -> dict[int, TLE]:
     This is the only place that makes a catalog-scale HTTP call to Celestrak.
     """
     url = f"{CELESTRAK_BASE}?GROUP=active&FORMAT=TLE"
-    response = httpx.get(url, timeout=30.0, headers=HEADERS)
+    response = httpx.get(url, timeout=_TIMEOUT_BULK, headers=HEADERS)
     response.raise_for_status()
 
     lines = [l.strip() for l in response.text.splitlines() if l.strip()]
@@ -391,7 +396,7 @@ def fetch_tle_by_norad(norad_id: int) -> TLE:
     # 3. Live fetch
     print(f"[cache miss] fetching NORAD {norad_id} from Celestrak")
     url = f"{CELESTRAK_BASE}?CATNR={norad_id}&FORMAT=TLE"
-    response = httpx.get(url, timeout=10.0, headers=HEADERS)
+    response = httpx.get(url, timeout=_TIMEOUT_SINGLE, headers=HEADERS)
     response.raise_for_status()
 
     raw = response.text.strip()
@@ -436,7 +441,7 @@ def fetch_satellite_catalog() -> list[dict]:
     print("[cache miss] fetching full satellite catalog from Celestrak")
     url = f"{CELESTRAK_BASE}?GROUP=active&FORMAT=TLE"
     try:
-        response = httpx.get(url, timeout=30.0, headers=HEADERS)
+        response = httpx.get(url, timeout=_TIMEOUT_BULK, headers=HEADERS)
         response.raise_for_status()
     except Exception as exc:
         print(f"[catalog] Celestrak fetch failed ({exc}), falling back to database")

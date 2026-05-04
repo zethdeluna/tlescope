@@ -28,8 +28,14 @@ RUN npm run build
 
 FROM  nginx:alpine
 
-# Replace nginx's default config with ours
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Place the config as a template; nginx:alpine's entrypoint runs envsubst on
+# /etc/nginx/templates/*.template before starting nginx, substituting any
+# env vars that are currently defined (e.g. BACKEND_URL).
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+
+# Default backend URL for docker-compose; override for Railway:
+#   BACKEND_URL=http://<service-name>.railway.internal:8000
+ENV BACKEND_URL=http://backend:8000
 
 # Copy compiled assets from the builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
