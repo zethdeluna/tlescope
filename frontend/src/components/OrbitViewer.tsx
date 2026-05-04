@@ -36,7 +36,6 @@ Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_TOKEN ?? "";
 
 interface OrbitViewerProps {
 	satellites: SatelliteEntry[];
-	onClose: () => void;
 }
 
 /**
@@ -146,7 +145,7 @@ function SatEntity({ sat, orbit }: SatEntityProps) {
 /**
  * Main component
  */
-export default function OrbitViewer({ satellites, onClose }: OrbitViewerProps) {
+export default function OrbitViewer({ satellites }: OrbitViewerProps) {
 
 	const orbit3DData = useSatelliteStore(s => s.orbit3DData);
 	const viewerRef = useRef<{ cesiumElement: Cesium.Viewer } | null>(null);
@@ -175,8 +174,6 @@ export default function OrbitViewer({ satellites, onClose }: OrbitViewerProps) {
 
 	// Collect satellites that have loaded orbit data
 	const readySats = satellites.filter(sat => orbit3DData[sat.noradId]?.data != null);
-	const loadingSats = satellites.filter(sat => orbit3DData[sat.noradId]?.loading);
-	const errorSats = satellites.filter(sat => orbit3DData[sat.noradId]?.error)
 
 	// Camera destination: initial view centered on the first loaded satellite's 
 	// current position, or default to high-alt Earth.
