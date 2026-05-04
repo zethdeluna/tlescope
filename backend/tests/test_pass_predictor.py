@@ -19,7 +19,7 @@ Reference pass provenance:
 import math
 from datetime import datetime, timezone, timedelta
 import pytest
-from pass_predictor import (
+from app.pass_predictor import (
 	PassEvent,
 	SatellitePass,
 	compute_aer,
