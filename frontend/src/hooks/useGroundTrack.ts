@@ -43,7 +43,7 @@ interface UseGroundTrackResult {
 	refresh: () => void;
 }
 
-const API_BASE = "/api";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const REFRESH_INTERVAL_MS = 60_000; // re-fetch every 60s
 
 export function useGroundTrack( noradId = 25544, durationMinutes = 90, stepSeconds = 60 ): UseGroundTrackResult {

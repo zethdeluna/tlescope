@@ -28,7 +28,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSatelliteStore } from "../store/satelliteStore";
 import { useHistoricalTrack } from "../hooks/useHistoricalTrack";
 
-const API_BASE = "/api";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 // Shape of one item from the /tle_history response
 interface TLESnapshotSummary {

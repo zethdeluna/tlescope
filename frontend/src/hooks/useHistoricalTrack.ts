@@ -33,7 +33,7 @@ export interface HistoricalTrackResult {
     error: string | null;
 }
 
-const API_BASE = "/api";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 export function useHistoricalTrack(
     noradId: number,
