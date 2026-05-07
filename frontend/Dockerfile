@@ -37,6 +37,10 @@ COPY nginx.conf /etc/nginx/templates/default.conf.template
 #   BACKEND_URL=http://<service-name>.railway.internal:8000
 ENV BACKEND_URL=http://backend:8000
 
+# Fallback resolver (Docker's embedded DNS). nginx's 15-local-resolvers.envsh
+# will override this with the actual resolver from /etc/resolv.conf if available.
+ENV NGINX_LOCAL_RESOLVERS=127.0.0.11
+
 # Copy compiled assets from the builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
