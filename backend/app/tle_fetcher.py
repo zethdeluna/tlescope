@@ -118,15 +118,23 @@ def refresh_tle_cache() -> None:
         print(f"[scheduler] loaded {len(disk_tles)} TLEs from disk cache (Celestrak fetch skipped)")
         return
 
-    # Disk cache is cold (new container). Check the DB before hitting Celestrak —
-    # the DB survives redeployments and avoids rate-limiting on frequent pushes.
-    db_tles = _load_recent_tles_from_db(TLE_TTL_SECONDS)
-    if len(db_tles) >= _MIN_BULK_ENTRIES:
-        with _tle_lock:
-            _tle_cache.clear()
-            _tle_cache.update(db_tles)
-        print(f"[scheduler] loaded {len(db_tles)} TLEs from database cache (Celestrak fetch skipped)")
-        return
+    # Disk cache is cold. If the in-memory cache is also empty this is a cold
+    # startup (new container), not a scheduled 4-hour refresh. Check the DB
+    # before hitting Celestrak — the DB survives redeployments and prevents
+    # rate-limiting when pushes happen faster than the 4-hour TLE TTL.
+    # Scheduled refreshes skip this block (in-memory cache is already populated)
+    # and always fetch fresh data from Celestrak.
+    with _tle_lock:
+        cold_start = len(_tle_cache) == 0
+
+    if cold_start:
+        db_tles = _load_recent_tles_from_db(TLE_TTL_SECONDS)
+        if len(db_tles) >= _MIN_BULK_ENTRIES:
+            with _tle_lock:
+                _tle_cache.clear()
+                _tle_cache.update(db_tles)
+            print(f"[scheduler] loaded {len(db_tles)} TLEs from database cache (Celestrak fetch skipped)")
+            return
 
     try:
         fresh = _fetch_active_tles()
