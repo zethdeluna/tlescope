@@ -12,11 +12,13 @@ The module now has three layers of concern:
      the first scheduler tick completing, so endpoints can serve stale-but-valid
      TLEs immediately rather than waiting for the background refresh.
 
-  3. PostgreSQL TLE history (_persist_snapshots)
-     NEW in Pillar 2. Every scheduler refresh also writes to the database,
-     deduplicated by (norad_id, epoch). The database is not in the request
-     path — endpoints never query it for position data. Its only purpose is
-     the historical record that powers the TLETimeline slider in the frontend.
+  3. PostgreSQL DB cache (_load_recent_tles_from_db)
+     Survives container restarts and redeployments — unlike the DiskCache,
+     which is wiped when Railway provisions a new container. On startup, if
+     the DB already holds a full recent catalog (fetched within TLE_TTL_SECONDS),
+     the in-memory cache is warmed from the DB instead of hitting Celestrak.
+     Every scheduler refresh also writes new TLE snapshots to the DB
+     (deduplicated by norad_id, epoch) for the historical TLETimeline feature.
 
 Call hierarchy at request time (unchanged from Pillar 1):
   endpoint  →  fetch_tle_by_norad()
@@ -37,7 +39,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, func, and_
 
 from app.orbital import TLE, parse_tle
 from app.database import Session, engine
@@ -116,6 +118,16 @@ def refresh_tle_cache() -> None:
         print(f"[scheduler] loaded {len(disk_tles)} TLEs from disk cache (Celestrak fetch skipped)")
         return
 
+    # Disk cache is cold (new container). Check the DB before hitting Celestrak —
+    # the DB survives redeployments and avoids rate-limiting on frequent pushes.
+    db_tles = _load_recent_tles_from_db(TLE_TTL_SECONDS)
+    if len(db_tles) >= _MIN_BULK_ENTRIES:
+        with _tle_lock:
+            _tle_cache.clear()
+            _tle_cache.update(db_tles)
+        print(f"[scheduler] loaded {len(db_tles)} TLEs from database cache (Celestrak fetch skipped)")
+        return
+
     try:
         fresh = _fetch_active_tles()
     except Exception as exc:
@@ -141,8 +153,63 @@ def refresh_tle_cache() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Database persistence helpers (Pillar 2)
+# Database helpers
 # ---------------------------------------------------------------------------
+
+def _load_recent_tles_from_db(max_age_seconds: float) -> dict[int, TLE]:
+    """
+    Return a full {norad_id: TLE} dict if the DB holds a recent bulk catalog.
+
+    Queries for the most-recent TLE snapshot per satellite whose fetched_at
+    falls within max_age_seconds. Returns {} when the data is stale, the DB
+    is empty, or the DB is unreachable — callers fall through to Celestrak.
+    """
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=max_age_seconds)
+    try:
+        with Session() as session:
+            recent_count = session.scalar(
+                select(func.count()).select_from(TLESnapshot)
+                .where(TLESnapshot.fetched_at >= cutoff)
+            ) or 0
+            if recent_count < _MIN_BULK_ENTRIES:
+                return {}
+
+            latest_sub = (
+                select(
+                    TLESnapshot.norad_id,
+                    func.max(TLESnapshot.fetched_at).label("max_fetch"),
+                )
+                .where(TLESnapshot.fetched_at >= cutoff)
+                .group_by(TLESnapshot.norad_id)
+                .subquery()
+            )
+
+            rows = session.execute(
+                select(
+                    TLESnapshot.norad_id,
+                    TLESnapshot.line1,
+                    TLESnapshot.line2,
+                    Satellite.name,
+                )
+                .join(latest_sub, and_(
+                    TLESnapshot.norad_id == latest_sub.c.norad_id,
+                    TLESnapshot.fetched_at == latest_sub.c.max_fetch,
+                ))
+                .join(Satellite, TLESnapshot.norad_id == Satellite.norad_id, isouter=True)
+            ).all()
+
+            return {
+                row.norad_id: TLE(
+                    name=row.name or f"NORAD {row.norad_id}",
+                    line1=row.line1,
+                    line2=row.line2,
+                )
+                for row in rows
+            }
+    except Exception as exc:
+        print(f"[scheduler] DB pre-check failed: {exc}")
+        return {}
+
 
 def _parse_tle_epoch(line1: str) -> datetime:
     """
