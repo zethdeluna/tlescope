@@ -23,7 +23,7 @@ export default function App() {
     const { selectedSatellites, tracks, groundStation, historicalTracks } =
         useSatelliteStore();
 
-    const [show3D, setShow3D] = useState(false);
+    const [show3D, setShow3D] = useState(true);
 
     // Build the list of satellites that have live track data ready to display
     const activeTracks = selectedSatellites.reduce<ActiveTrack[]>((acc, sat) => {

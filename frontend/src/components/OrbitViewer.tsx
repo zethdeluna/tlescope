@@ -175,11 +175,20 @@ export default function OrbitViewer({ satellites }: OrbitViewerProps) {
 
 	}, [readySats]);
 
+	const isAcquiring = satellites.length > 0 && readySats.length === 0;
+
 	return (
 		<div className="orbit-viewer-container">
 
+			{isAcquiring && (
+				<div className="map-overlay">
+					<div className="loader-ring" />
+					<p className="loader-text">ACQUIRING SIGNAL...</p>
+				</div>
+			)}
+
 			{/* CesiumJS globe */}
-			<Viewer 
+			<Viewer
 				ref={viewerRef} 
 				full={false} 
 				className="orbit-cesium-viewer" 
