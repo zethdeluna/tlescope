@@ -73,10 +73,16 @@ def run_migrations_online() -> None:
     the migration process gets a fresh connection and releases it when done,
     rather than leaving it parked in the connection pool.
     """
+    # For PostgreSQL, fail fast if the DB is unreachable rather than hanging
+    # indefinitely. 5 seconds is enough for a healthy Railway DB; a hung
+    # connection would otherwise block uvicorn from ever starting.
+    connect_args = {"connect_timeout": 5} if DATABASE_URL.startswith(("postgresql", "postgres")) else {}
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
