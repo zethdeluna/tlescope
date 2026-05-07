@@ -37,13 +37,12 @@ COPY nginx.conf /etc/nginx/templates/default.conf.template
 #   BACKEND_URL=http://<service-name>.railway.internal:8000
 ENV BACKEND_URL=http://backend:8000
 
-# Fallback resolver (Docker's embedded DNS). nginx's 15-local-resolvers.envsh
-# will override this with the actual resolver from /etc/resolv.conf if available.
-ENV NGINX_LOCAL_RESOLVERS=127.0.0.11
-
 # Copy compiled assets from the builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+# Read the actual DNS resolver from /etc/resolv.conf at container start so nginx
+# can re-resolve .railway.internal hostnames after a redeployment. 127.0.0.11 is
+# the Docker-compose fallback; Railway's resolver will be whatever is in resolv.conf.
+CMD ["/bin/sh", "-c", "RESOLVER=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf); NGINX_LOCAL_RESOLVERS=${RESOLVER:-127.0.0.11} envsubst '${BACKEND_URL} ${NGINX_LOCAL_RESOLVERS}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf; exec nginx -g 'daemon off;'"]
