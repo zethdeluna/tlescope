@@ -21,4 +21,7 @@ EXPOSE 8000
 
 # Run Alembic migrations before starting the server so the schema is always 
 # up-to-date.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]
+# Run migrations with a 20s cap so a slow DB can't block uvicorn startup.
+# The app degrades gracefully without the DB (history endpoints fail, core
+# tracking still works from the in-memory/disk cache).
+CMD ["sh", "-c", "timeout 20 alembic upgrade head || echo '[startup] migration skipped'; uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]
